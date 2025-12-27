@@ -17,11 +17,11 @@ $$\mathrm{d}u(t) = Au(t)\,\mathrm{d}t + Q^{1/2}\mathrm{d}W_t, \quad u(0) = u_0 \
 
 where $H$ is a separable Hilbert space, $A$ generates a strongly continuous semigroup $S(t) = e^{tA}$, and $Q^{1/2}: U \to H$ is a Hilbert–Schmidt operator introducing spatially correlated (coloured) noise.
 
-The **Malliavin score formula** derived in the paper states that for directions $h \in \mathcal{H}_t := \operatorname{Ran}(\gamma_t^{1/2})$ (the Cameron–Martin space), the logarithmic derivative of the transition measure is
+The **Malliavin score formula** derived in the paper states that for directions $h \in \mathcal{H}_t := \mathrm{Ran}(\gamma_t^{1/2})$ (the Cameron–Martin space), the logarithmic derivative of the transition measure is
 
 $$\beta_h(u) = -\langle u - S(t)u_0, \gamma_t^{-1} h \rangle_H,$$
 
-where $\gamma_t = \int_0^t S(s) Q^{1/2}(Q^{1/2})^* S(s)^* \,\mathrm{d}s$ is the Malliavin covariance operator.
+where $\gamma_t = \int_0^t S(s) Q^{1/2}(Q^{1/2})^* S(s)^* \,\mathrm{d}s$ is the Malliavin covariance operator and $\mathrm{Ran}(\cdot)$ denotes the range of an operator.
 
 ## Mathematical Framework
 
@@ -272,7 +272,7 @@ The implementation satisfies the following properties:
 
 3. **Trace-class regularity**: The noise covariance $q_k = k^{-\alpha}$ with $\alpha > 1$ ensures $\sum_k q_k < \infty$.
 
-4. **Cameron–Martin constraint**: The direction $h = \varphi_1$ lies in the Cameron–Martin space $\mathcal{H}_t = \operatorname{Ran}(\gamma_t^{1/2})$ for all $t > 0$.
+4. **Cameron–Martin constraint**: The direction $h = \varphi_1$ lies in the Cameron–Martin space $\mathcal{H}_t = \mathrm{Ran}(\gamma_t^{1/2})$ for all $t > 0$.
 
 ## Citation
 
