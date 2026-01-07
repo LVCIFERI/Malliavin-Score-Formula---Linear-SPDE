@@ -12,8 +12,8 @@ against finite-difference baselines for eight SPDE classes:
 
     Second-order:
         - Stochastic Heat Equation:     A = Δ
-        - Ornstein-Uhlenbeck:           A = Δ - αI
-        - Advection-Diffusion:          A = νΔ
+        - Ornstein-Uhlenbeck:           A = Δ - κI
+        - Scaled Diffusion:             A = νΔ
         - Fractional Laplacian:         A = -(-Δ)^α
 
     Fourth-order:
@@ -296,15 +296,15 @@ class OrnsteinUhlenbeck(LinearSPDE):
     """
     Ornstein-Uhlenbeck Process in function space.
 
-        du = (Δu - αu) dt + Q^{1/2} dW
+        du = (Δu - κu) dt + Q^{1/2} dW
 
-    Eigenvalues: a_k = -(kπ)² - α
+    Eigenvalues: a_k = -(kπ)² - κ
 
     Adds linear damping to the heat equation, ensuring faster convergence
     to the stationary distribution.
 
     Args:
-        alpha: Damping coefficient (α > 0)
+        kappa: Damping coefficient (κ > 0)
     """
 
     def __init__(
@@ -312,31 +312,31 @@ class OrnsteinUhlenbeck(LinearSPDE):
         n_modes: int,
         time: float,
         noise_decay: float,
-        alpha: float = 2.0,
+        kappa: float = 2.0,
     ) -> None:
-        if alpha <= 0:
-            raise ValueError(f"Damping coefficient α must be positive, got {alpha}")
-        self.alpha = alpha
+        if kappa <= 0:
+            raise ValueError(f"Damping coefficient κ must be positive, got {kappa}")
+        self.kappa = kappa
         super().__init__(n_modes, time, noise_decay)
 
     @property
     def name(self) -> str:
-        return f"Ornstein-Uhlenbeck (α={self.alpha})"
+        return f"Ornstein-Uhlenbeck (κ={self.kappa})"
 
     def _compute_operator_eigenvalues(self) -> None:
-        self.operator_eigenvalues = -self.laplacian_eigenvalues - self.alpha
+        self.operator_eigenvalues = -self.laplacian_eigenvalues - self.kappa
 
 
-class AdvectionDiffusion(LinearSPDE):
+class ScaledDiffusion(LinearSPDE):
     """
-    Advection-Diffusion Equation (diffusion-dominated).
+    Scaled Diffusion Equation.
 
         du = νΔu dt + Q^{1/2} dW
 
     Eigenvalues: a_k = -ν(kπ)²
 
-    Models transport with diffusion. The parameter ν controls the
-    diffusion strength (Péclet number).
+    Models diffusion with variable viscosity. The parameter ν controls the
+    diffusion strength.
 
     Args:
         nu: Diffusion coefficient (ν > 0)
@@ -356,7 +356,7 @@ class AdvectionDiffusion(LinearSPDE):
 
     @property
     def name(self) -> str:
-        return f"Advection-Diffusion (ν={self.nu})"
+        return f"Scaled Diffusion (ν={self.nu})"
 
     def _compute_operator_eigenvalues(self) -> None:
         self.operator_eigenvalues = -self.nu * self.laplacian_eigenvalues
@@ -706,36 +706,36 @@ def create_2x2_figure(
 ) -> plt.Figure:
     """
     Create a 2x2 figure with 4 SPDE subplots.
-    
+
     Each subplot has:
     - Main panel: score trajectories
     - Lower panel: error on log scale
-    
+
     Args:
         output_path: Path for saving the figure
         spde_specs: List of 4 (class, kwargs, title) tuples
         config: Simulation configuration
         rng: Random number generator
-    
+
     Returns:
         The matplotlib Figure object
     """
     assert len(spde_specs) == 4, "Need exactly 4 SPDEs for 2x2 grid"
-    
+
     path_colours = [
         COLOURS["blue"],
         COLOURS["purple"],
         COLOURS["orange"],
         COLOURS["green"],
     ]
-    
+
     # Create figure - full page width, appropriate height for 2x2
     fig = plt.figure(figsize=(7.5, 8))  # Width matches \textwidth, good height
-    
+
     # Compute all data first to get global error range
     all_results = []
     all_errors = []
-    
+
     for spde_class, spde_kwargs, title in spde_specs:
         times, mall_scores, fd_scores = simulate_score_trajectories(
             spde_class, spde_kwargs, config, rng
@@ -743,14 +743,14 @@ def create_2x2_figure(
         errors = np.abs(mall_scores - fd_scores)
         all_results.append((times, mall_scores, fd_scores, errors, title))
         all_errors.append(errors)
-    
+
     # Compute dynamic y-limits for error plots
     all_errors_flat = np.concatenate([e.flatten() for e in all_errors])
     error_min = max(all_errors_flat.min(), 1e-16)
     error_max = all_errors_flat.max()
     y_min = error_min / 10
     y_max = error_max * 10
-    
+
     # Create 2x2 grid with space for error subplots
     outer_grid = fig.add_gridspec(
         2, 2,
@@ -761,31 +761,31 @@ def create_2x2_figure(
         left=0.10,
         right=0.98,
     )
-    
+
     for idx, (times, mall_scores, fd_scores, errors, title) in enumerate(all_results):
         row = idx // 2
         col = idx % 2
-        
+
         # Create inner grid for main plot + error plot
         inner_grid = outer_grid[row, col].subgridspec(
             2, 1,
             height_ratios=[3, 1],
             hspace=0.08,
         )
-        
+
         ax_main = fig.add_subplot(inner_grid[0])
         ax_error = fig.add_subplot(inner_grid[1])
-        
+
         # Plot trajectories
         for path_idx in range(config.n_paths):
             colour = path_colours[path_idx % len(path_colours)]
-            
+
             # Malliavin: solid lines
             ax_main.plot(
                 times, mall_scores[path_idx],
                 "-", color=colour, linewidth=1.8, alpha=0.9
             )
-            
+
             # Finite difference: hollow circles (sparse)
             ax_main.scatter(
                 times[::5], fd_scores[path_idx, ::5],
@@ -793,20 +793,20 @@ def create_2x2_figure(
                 facecolors="white", edgecolors=colour,
                 linewidths=1.5, zorder=4,
             )
-            
+
             # Error
             ax_error.semilogy(
                 times, errors[path_idx] + 1e-16,
                 "-", color=colour, linewidth=1.2, alpha=0.85
             )
-        
+
         # Styling - main panel
         ax_main.axhline(0, color=COLOURS["light_grey"], linewidth=0.8)
         ax_main.set_title(title, fontweight="bold", fontsize=11, pad=6)
         ax_main.set_xlim([0, config.t_end + 0.02])
         ax_main.tick_params(labelbottom=False)
         ax_main.set_ylabel(r"$\beta_h(u(t))$", fontsize=11)
-        
+
         # Styling - error panel
         ax_error.axhline(
             1e-12, color=COLOURS["grey"],
@@ -816,7 +816,7 @@ def create_2x2_figure(
         ax_error.set_xlim([0, config.t_end + 0.02])
         ax_error.set_ylim([y_min, y_max])
         ax_error.set_ylabel("|Error|", fontsize=10)
-        
+
         # Legend on first panel only
         if idx == 0:
             legend_elements = [
@@ -829,17 +829,17 @@ def create_2x2_figure(
                 frameon=True, framealpha=0.95, fontsize=10,
                 edgecolor=COLOURS["light_grey"],
             )
-    
+
     # Save in multiple formats
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path.with_suffix(".png"), dpi=DPI)
     fig.savefig(output_path.with_suffix(".pdf"), dpi=DPI)
     fig.savefig(output_path.with_suffix(".eps"), format='eps', dpi=DPI)
-    
+
     print(f"Saved: {output_path.with_suffix('.png')}")
     print(f"Saved: {output_path.with_suffix('.pdf')}")
     print(f"Saved: {output_path.with_suffix('.eps')}")
-    
+
     plt.close(fig)
     return fig
 
@@ -851,22 +851,22 @@ def create_validation_figures(
 ) -> None:
     """
     Create two 2x2 figures: one for second-order SPDEs, one for fourth-order.
-    
+
     Args:
         output_dir: Directory for output figures
         config: Simulation configuration
         seed: Random seed for reproducibility
     """
     rng = np.random.default_rng(seed)
-    
+
     # Second-order SPDEs (2x2)
     second_order_specs = [
         (HeatEquation, {}, "Heat Equation"),
-        (OrnsteinUhlenbeck, {"alpha": 2.0}, "Ornstein–Uhlenbeck"),
-        (AdvectionDiffusion, {"nu": 0.1}, "Advection–Diffusion"),
+        (OrnsteinUhlenbeck, {"kappa": 2.0}, "Ornstein–Uhlenbeck"),
+        (ScaledDiffusion, {"nu": 0.1}, "Scaled Diffusion"),
         (FractionalLaplacian, {"alpha": 0.75}, "Fractional Laplacian"),
     ]
-    
+
     print("\n" + "=" * 60)
     print("Generating Second-Order SPDEs Figure")
     print("=" * 60)
@@ -876,7 +876,7 @@ def create_validation_figures(
         config,
         rng,
     )
-    
+
     # Fourth-order SPDEs (2x2)
     fourth_order_specs = [
         (Biharmonic, {}, "Biharmonic"),
@@ -884,7 +884,7 @@ def create_validation_figures(
         (SwiftHohenberg, {"r": 0.0}, "Swift–Hohenberg"),
         (PolynomialLaplacian, {"poly": PolynomialCoefficients({2: -1.0, 1: 0.5})}, "Polynomial"),
     ]
-    
+
     print("\n" + "=" * 60)
     print("Generating Fourth-Order SPDEs Figure")
     print("=" * 60)
