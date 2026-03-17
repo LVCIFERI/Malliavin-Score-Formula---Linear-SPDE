@@ -1,10 +1,10 @@
 """
-Score Formula Validation for 2D SPDEs via Fourier Pseudospectral Collocation
-=============================================================================
+Score Formula Validation for 2D SPDEs via Fourier Spectral Method
+=================================================================
 
 Numerical validation of the Malliavin score formula (Theorem 4) for linear
-SPDEs on the two-dimensional periodic domain [0, 2pi]^2 using Fourier
-pseudospectral collocation.
+SPDEs on the two-dimensional periodic domain [0, 2pi]^2 using a Fourier
+spectral discretisation.
 
 Validates the closed-form score formula:
     beta_h(u) = -<u - S(t)u0, gamma_t^{-1} h>_H
@@ -19,11 +19,12 @@ against central finite-difference approximations for four SPDE classes:
         3. Stochastic Biharmonic:                 A = -mu*Delta^2
         4. Linearised Swift-Hohenberg:            A = (r-1)I - 2*Delta - Delta^2
 
-Spatial discretisation: Fourier pseudospectral collocation on [0, 2pi]^2 with
-periodic boundary conditions. Differentiation matrices are constructed via
-trigonometric interpolation on an odd number of equidistant collocation points,
-following the formulation in Trefethen (2000). The 2D operator is assembled
-using Kronecker products.
+Spatial discretisation: Fourier spectral method on [0, 2pi]^2 with periodic
+boundary conditions.  All spectral operations (eigenvalues, covariance, score)
+are carried out mode-by-mode via the FFT.  Differentiation matrices are
+constructed via trigonometric interpolation on an odd number of equidistant
+grid points (Trefethen, 2000) solely for cross-validation of analytical
+eigenvalues against the numerical operator spectrum.
 
 Noise covariance:  q_{k1,k2} = (1 + k1^2 + k2^2)^{-s},  s > 1 (trace-class).
 
@@ -116,7 +117,7 @@ PATH_COLOURS = ["#1B3A5C", "#8B2020", "#2A5E3F", "#5B2D7E"]
 @dataclass(frozen=True)
 class SimulationConfig:
     """Configuration for 2D score trajectory simulation."""
-    N: int = 48                # Collocation points per direction: N+1 (must be even)
+    N: int = 48                # Fourier modes per direction: N+1 (must be even)
     n_paths: int = 4           # Number of independent sample paths
     n_timesteps: int = 50      # Number of time evaluation points
     t_start: float = 0.02      # Start time (avoid t = 0 singularity)
@@ -126,20 +127,23 @@ class SimulationConfig:
 
 
 # =============================================================================
-# Fourier Pseudospectral Collocation Infrastructure
+# Fourier Differentiation Matrices (for cross-validation only)
 # =============================================================================
 
 def gen_fourier_diff_matrix(N: int, L: float = 2.0 * np.pi) -> tuple:
     """
-    Generate Fourier collocation points, quadrature weight, and differentiation
+    Generate Fourier grid points, quadrature weight, and differentiation
     matrix for the periodic domain [0, L) with N+1 equidistant points (N even).
 
+    Used solely for cross-validation of analytical eigenvalues against
+    the numerical operator spectrum.
+
     Args:
-        N: Number of intervals (must be even). Gives N+1 collocation points.
+        N: Number of intervals (must be even). Gives N+1 grid points.
         L: Domain length (default 2pi).
 
     Returns:
-        z: Collocation points, shape (N+1,)
+        z: Grid points, shape (N+1,)
         w: Uniform quadrature weight (scalar)
         D: First-derivative differentiation matrix, shape (N+1, N+1)
     """
@@ -195,17 +199,17 @@ class LinearSPDE2D(ABC):
     Abstract base class for linear SPDEs on [0, 2pi]^2 with periodic BCs.
 
     Spectral computations use the FFT (O(M log M)), not matrix eigendecomposition.
-    The collocation differentiation matrices are retained solely for cross-validation
+    The differentiation matrices are retained solely for cross-validation
     of the analytical eigenvalues against the numerical operator spectrum.
     """
 
     def __init__(self, N: int, noise_decay: float) -> None:
         self.N = N
-        self.mx = N + 1          # odd number of collocation points per direction
+        self.mx = N + 1          # odd number of grid points per direction
         self.M  = self.mx ** 2   # total degrees of freedom
         self.noise_decay = noise_decay
 
-        # Collocation grid
+        # Uniform grid on [0, 2pi)
         self.x = 2.0 * np.pi / self.mx * np.arange(self.mx)
 
         # Wavenumber grid: k1, k2 ∈ {0, 1, ..., (mx-1)/2, -(mx-1)/2, ..., -1}
@@ -221,7 +225,7 @@ class LinearSPDE2D(ABC):
         self.operator_eigenvalues = self.operator_eigenvalues_2d.flatten()
         self.q_eigenvalues = self.q_eigenvalues_2d.flatten()
 
-        # Cross-validate against collocation differentiation matrices
+        # Cross-validate against differentiation-matrix spectrum
         self._cross_validate_eigenvalues(N)
 
         if np.any(self.operator_eigenvalues > 1e-10):
@@ -229,7 +233,7 @@ class LinearSPDE2D(ABC):
             raise ValueError(f"{self.name}: {n_unstable} unstable eigenvalue(s).")
 
     def _cross_validate_eigenvalues(self, N: int) -> None:
-        """Compare analytical eigenvalues against the collocation operator spectrum."""
+        """Compare analytical eigenvalues against the differentiation-matrix spectrum."""
         ops = build_2d_operators(N)
         A_mat = self._build_operator_matrix(ops["Lap"], ops["BiLap"], ops["I"])
         A_mat = 0.5 * (A_mat + A_mat.T)
@@ -689,7 +693,7 @@ def run_validation(
     results = []
     for title, spde in spde_specs:
         print(f"\n  {title}")
-        print(f"    Grid: {spde.mx} x {spde.mx} = {spde.M} collocation points")
+        print(f"    Grid: {spde.mx} x {spde.mx} = {spde.M} grid points")
         print(f"    Eigenvalue range: [{spde.operator_eigenvalues.min():.2f}, "
               f"{spde.operator_eigenvalues.max():.6f}]")
 
@@ -705,13 +709,13 @@ def run_validation(
         results.append((title, times, mall, fd, fields_2d))
 
     print("\n  Generating figure...")
-    create_validation_figure(output_dir / "score_2d_collocation", results, config)
+    create_validation_figure(output_dir / "score_2d_spectral", results, config)
 
 
 def main() -> None:
     warnings.filterwarnings("ignore", category=RuntimeWarning)
     print("=" * 70)
-    print("Score Formula Validation -- 2D Fourier Pseudospectral Collocation")
+    print("Score Formula Validation -- 2D Fourier Spectral Method")
     print("Domain: [0, 2pi]^2 with periodic boundary conditions")
     print("=" * 70)
     run_validation()
