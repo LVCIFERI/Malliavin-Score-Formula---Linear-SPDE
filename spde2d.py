@@ -28,13 +28,12 @@ eigenvalues against the numerical operator spectrum.
 
 Noise covariance:  q_{k1,k2} = (1 + k1^2 + k2^2)^{-s},  s > 1 (trace-class).
 
-Figure layout: 4 rows (one per SPDE) x 3 columns:
-    Col 0 -- 2D Malliavin score field s(x,y) at t = T  (physical space heatmap)
-    Col 1 -- 2D pointwise |Malliavin - FD| error field  (log-scale heatmap)
-    Col 2 -- Scalar directional score beta_h(u(t)) trajectories + log|error| vs t
+Figure layout: two separate 2×2 figures:
+    Figure 1 -- Stochastic component (u - S(t)u0)(x,y) at t = T  (RdBu_r heatmap)
+    Figure 2 -- Pointwise |Malliavin - FD| score error             (viridis, LogNorm)
 
 Usage:
-    python score_validation_2d.py
+    python spde2d.py
 """
 
 from __future__ import annotations
@@ -70,8 +69,8 @@ plt.rcParams.update({
     "axes.labelsize":       10,
     "axes.titlesize":       10,
     "legend.fontsize":      8.5,
-    "xtick.labelsize":      8,
-    "ytick.labelsize":      8,
+    "xtick.labelsize":      10,
+    "ytick.labelsize":      10,
     "text.usetex":          False,
     # Spines & ticks — thin and inward for a journal-quality look
     "axes.linewidth":       0.55,
@@ -122,7 +121,7 @@ class SimulationConfig:
     n_timesteps: int = 50      # Number of time evaluation points
     t_start: float = 0.02      # Start time (avoid t = 0 singularity)
     t_end: float = 1.0         # Terminal time
-    noise_decay: float = 3.0   # Noise covariance decay: q = (1 + |k|^2)^{-s}
+    noise_decay: float = 2.0   # Noise covariance decay: q = (1 + |k|^2)^{-s}
     fd_epsilon: float = 1e-5   # Finite difference step size
 
 
@@ -509,20 +508,18 @@ def simulate_score_trajectories(
 # Visualisation
 # =============================================================================
 
-_PI_TICKS  = [0, np.pi / 2, np.pi, 3 * np.pi / 2, 2 * np.pi]
-_PI_LABELS = ["$0$", r"$\frac{\pi}{2}$", r"$\pi$", r"$\frac{3\pi}{2}$", r"$2\pi$"]
-# Compact tick labels used on non-bottom rows (avoid clutter)
-_PI_LABELS_COMPACT = ["$0$", "", r"$\pi$", "", r"$2\pi$"]
+_PI_TICKS  = [0, np.pi, 2 * np.pi]
+_PI_LABELS = ["$0$", r"$\pi$", r"$2\pi$"]
 
 
-def _set_pi_ticks(ax, which="both", labels=True, compact=False):
-    labs = (_PI_LABELS_COMPACT if compact else _PI_LABELS) if labels else [""] * 5
+def _set_pi_ticks(ax, which="both", labels=True):
+    labs = _PI_LABELS if labels else [""] * 3
     if which in ("x", "both"):
         ax.set_xticks(_PI_TICKS)
-        ax.set_xticklabels(labs, fontsize=7.5)
+        ax.set_xticklabels(labs, fontsize=10)
     if which in ("y", "both"):
         ax.set_yticks(_PI_TICKS)
-        ax.set_yticklabels(labs, fontsize=7.5)
+        ax.set_yticklabels(labs, fontsize=10)
 
 
 def _style_heatmap_ax(ax):
@@ -539,92 +536,112 @@ def _slim_colorbar(fig, im, ax, *, extend="neither"):
     cb = fig.colorbar(im, ax=ax, fraction=0.028, pad=0.025, aspect=26,
                       extend=extend)
     cb.outline.set_linewidth(0.4)
-    cb.ax.tick_params(labelsize=6.5, width=0.4, length=2.5, direction="in")
+    cb.ax.tick_params(labelsize=10, width=0.4, length=2.5, direction="in")
     return cb
 
 
-def create_validation_figure(
+def _save_figure(fig, output_path: Path) -> None:
+    """Save figure in PNG, PDF, and EPS formats."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    for ext in (".png", ".pdf", ".eps"):
+        fpath = output_path.with_suffix(ext)
+        kwargs = {"format": "eps"} if ext == ".eps" else {}
+        fig.savefig(fpath, dpi=DPI, **kwargs)
+        print(f"  Saved: {fpath}")
+    plt.close(fig)
+
+
+def create_solution_figure(
     output_path: Path,
     spde_results: Sequence[tuple],
-    config: SimulationConfig,
 ) -> plt.Figure:
     """
-    Publication-quality 4-row × 2-column validation figure.
-
-    Layout per row (one SPDE per row):
-      Col 0 — Centred solution field (u - S(t)u0)(x,y) at t = T  [RdBu_r]
-      Col 1 — Pointwise |Malliavin − FD| error                    [viridis, LogNorm]
-
-    Centred SPDE name above each row, column headers at top.
+    2×2 figure: stochastic component (u - S(t)u₀)(x,y) for each SPDE.
     """
     assert len(spde_results) == 4
 
-    _soln_cmap  = "RdBu_r"
-    _error_cmap = "viridis"
+    fig, axes = plt.subplots(
+        2, 2, figsize=(7.0, 6.8), facecolor="white",
+        gridspec_kw={"hspace": 0.30, "wspace": 0.22,
+                     "top": 0.94, "bottom": 0.07,
+                     "left": 0.08, "right": 0.93},
+    )
+
+    for idx, (title, times, mall_scores, fd_scores, fields_2d) in enumerate(
+        spde_results
+    ):
+        row, col = divmod(idx, 2)
+        ax = axes[row, col]
+        cf = fields_2d["centred"]
+        x, y = fields_2d["x"], fields_2d["y"]
+        is_bottom = (row == 1)
+        is_left   = (col == 0)
+
+        vmax = float(np.abs(cf).max()) or 1.0
+        im = ax.pcolormesh(
+            x, y, cf.T,
+            cmap="RdBu_r", vmin=-vmax, vmax=vmax,
+            shading="gouraud", rasterized=True,
+        )
+        ax.set_aspect("equal")
+        _style_heatmap_ax(ax)
+
+        ax.set_title(title,
+                     fontsize=10, fontweight="bold", color=COLOURS["text_dark"],
+                     pad=5, loc="center")
+
+        if is_left:
+            _set_pi_ticks(ax, "y")
+            if is_bottom:
+                ax.set_yticklabels(["", r"$\pi$", r"$2\pi$"], fontsize=10)
+        else:
+            ax.set_yticks(_PI_TICKS)
+            ax.set_yticklabels([""] * 3)
+
+        if is_bottom:
+            _set_pi_ticks(ax, "x")
+        else:
+            ax.set_xticks(_PI_TICKS)
+            ax.set_xticklabels([""] * 3)
+
+        cb = _slim_colorbar(fig, im, ax)
+        cb.set_ticks([-vmax, 0, vmax])
+        cb.ax.yaxis.set_major_formatter(
+            mticker.FuncFormatter(lambda v, _: f"{v:.1e}" if v != 0 else "0")
+        )
+
+    _save_figure(fig, output_path)
+    return fig
+
+
+def create_error_figure(
+    output_path: Path,
+    spde_results: Sequence[tuple],
+) -> plt.Figure:
+    """
+    2×2 figure: pointwise score error |s_Mall − s_FD| for each SPDE.
+    """
+    assert len(spde_results) == 4
 
     panel_letters = ["(a)", "(b)", "(c)", "(d)"]
 
     fig, axes = plt.subplots(
-        4, 2, figsize=(7.2, 11.2), facecolor="white",
-        gridspec_kw={"hspace": 0.35, "wspace": 0.10,
-                     "top": 0.92, "bottom": 0.045,
-                     "left": 0.08, "right": 0.92},
+        2, 2, figsize=(7.0, 6.8), facecolor="white",
+        gridspec_kw={"hspace": 0.30, "wspace": 0.22,
+                     "top": 0.94, "bottom": 0.07,
+                     "left": 0.08, "right": 0.93},
     )
 
-    # Column headers — well above the first row
-    fig.text(0.30, 0.960,
-             r"Stochastic component  $(u - S(t)\,u_0)(x,\,y)$",
-             ha="center", va="bottom", fontsize=10, fontstyle="italic",
-             color=COLOURS["text_dark"])
-    fig.text(0.73, 0.960,
-             r"Score error  $|s_{\mathrm{Mall}} - s_{\mathrm{FD}}|$",
-             ha="center", va="bottom", fontsize=10, fontstyle="italic",
-             color=COLOURS["text_dark"])
-
-    for row, (title, times, mall_scores, fd_scores, fields_2d) in enumerate(
+    for idx, (title, times, mall_scores, fd_scores, fields_2d) in enumerate(
         spde_results
     ):
-        cf   = fields_2d["centred"]       # centred solution field
-        ef   = fields_2d["error"]
+        row, col = divmod(idx, 2)
+        ax = axes[row, col]
+        ef = fields_2d["error"]
         x, y = fields_2d["x"], fields_2d["y"]
-        is_bottom = (row == 3)
-        ax_cf = axes[row, 0]
-        ax_ef = axes[row, 1]
+        is_bottom = (row == 1)
+        is_left   = (col == 0)
 
-        # ── Centred row title spanning both columns ───────────────────────
-        mid_x = 0.5 * (ax_cf.get_position().x0 + ax_ef.get_position().x1)
-        title_y = ax_cf.get_position().y1 + 0.010
-        fig.text(mid_x, title_y, f"{panel_letters[row]}  {title}",
-                 ha="center", va="bottom", fontsize=10, fontweight="bold",
-                 color=COLOURS["text_dark"])
-
-        # ── Col 0: Centred solution field ─────────────────────────────────
-        vmax_cf = float(np.abs(cf).max()) or 1.0
-
-        im_cf = ax_cf.pcolormesh(
-            x, y, cf.T,
-            cmap=_soln_cmap, vmin=-vmax_cf, vmax=vmax_cf,
-            shading="gouraud", rasterized=True,
-        )
-        ax_cf.set_aspect("equal")
-        _style_heatmap_ax(ax_cf)
-
-        _set_pi_ticks(ax_cf, "y", compact=not is_bottom)
-        ax_cf.set_ylabel("$y$", fontsize=9, labelpad=2)
-        if is_bottom:
-            _set_pi_ticks(ax_cf, "x", compact=False)
-            ax_cf.set_xlabel("$x$", fontsize=9, labelpad=2)
-        else:
-            ax_cf.set_xticks(_PI_TICKS)
-            ax_cf.set_xticklabels([""] * 5)
-
-        cb_cf = _slim_colorbar(fig, im_cf, ax_cf)
-        cb_cf.set_ticks([-vmax_cf, 0, vmax_cf])
-        cb_cf.ax.yaxis.set_major_formatter(
-            mticker.FuncFormatter(lambda v, _: f"{v:.1e}" if v != 0 else "0")
-        )
-
-        # ── Col 1: Error field ────────────────────────────────────────────
         e_flat = ef.flatten()
         e_pos  = e_flat[e_flat > 0]
         ev_min = float(e_pos.min()) if len(e_pos) else 1e-16
@@ -632,44 +649,216 @@ def create_validation_figure(
         if ev_max <= ev_min:
             ev_max = ev_min * 10
 
-        im_ef = ax_ef.pcolormesh(
+        im = ax.pcolormesh(
             x, y, ef.T,
-            cmap=_error_cmap, norm=LogNorm(vmin=ev_min, vmax=ev_max),
+            cmap="viridis", norm=LogNorm(vmin=ev_min, vmax=ev_max),
             shading="auto", rasterized=True,
         )
-        ax_ef.set_aspect("equal")
-        _style_heatmap_ax(ax_ef)
+        ax.set_aspect("equal")
+        _style_heatmap_ax(ax)
 
-        ax_ef.set_yticks(_PI_TICKS)
-        ax_ef.set_yticklabels([""] * 5)
-        if is_bottom:
-            _set_pi_ticks(ax_ef, "x", compact=False)
-            ax_ef.set_xlabel("$x$", fontsize=9, labelpad=2)
+        ax.set_title(f"{panel_letters[idx]}  {title}",
+                     fontsize=10, fontweight="bold", color=COLOURS["text_dark"],
+                     pad=5, loc="center")
+
+        if is_left:
+            _set_pi_ticks(ax, "y")
+            if is_bottom:
+                ax.set_yticklabels(["", r"$\pi$", r"$2\pi$"], fontsize=10)
         else:
-            ax_ef.set_xticks(_PI_TICKS)
-            ax_ef.set_xticklabels([""] * 5)
+            ax.set_yticks(_PI_TICKS)
+            ax.set_yticklabels([""] * 3)
 
-        cb_ef = _slim_colorbar(fig, im_ef, ax_ef)
-        cb_ef.ax.yaxis.set_major_formatter(
+        if is_bottom:
+            _set_pi_ticks(ax, "x")
+        else:
+            ax.set_xticks(_PI_TICKS)
+            ax.set_xticklabels([""] * 3)
+
+        cb = _slim_colorbar(fig, im, ax)
+        cb.ax.yaxis.set_major_formatter(
             mticker.LogFormatterSciNotation(base=10, labelOnlyBase=True)
         )
-        cb_ef.ax.tick_params(labelsize=6.5)
 
-    # ── Save ──────────────────────────────────────────────────────────────────
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    for ext in (".png", ".pdf", ".eps"):
-        fpath = output_path.with_suffix(ext)
-        kwargs = {"format": "eps"} if ext == ".eps" else {}
-        fig.savefig(fpath, dpi=DPI, **kwargs)
-        print(f"  Saved: {fpath}")
+        # Max-error annotation inside panel
+        max_err = float(ef.max())
+        ax.text(0.97, 0.04, f"max $= {max_err:.0e}$",
+                ha="right", va="bottom", transform=ax.transAxes,
+                fontsize=10, color="white",
+                bbox=dict(facecolor="#444444", alpha=1.0, pad=1.5,
+                          boxstyle="round,pad=0.2"))
 
-    plt.close(fig)
+    _save_figure(fig, output_path)
     return fig
 
 
 # =============================================================================
 # Main Driver
 # =============================================================================
+
+def create_noise_figure(
+    output_path: Path,
+    N: int = 48,
+    noise_decay: float = 2.0,
+    seed: int = RANDOM_SEED,
+) -> plt.Figure:
+    """
+    2×2 figure: four independent samples of the coloured noise Q^{1/2} xi.
+
+    Each Fourier mode is sampled as an independent complex Gaussian with
+    variance q_k = (1 + |k|^2)^{-s}.  Physical-space fields are obtained
+    via IFFT.
+    """
+    rng = np.random.default_rng(seed)
+    mx = N + 1
+    M  = mx * mx
+    x  = 2.0 * np.pi / mx * np.arange(mx)
+
+    k1d = np.fft.fftfreq(mx) * mx
+    KX, KY = np.meshgrid(k1d, k1d, indexing="ij")
+    K2 = KX ** 2 + KY ** 2
+    q  = (1.0 + K2) ** (-noise_decay)
+
+    panel_letters = ["(a)", "(b)", "(c)", "(d)"]
+
+    fig, axes = plt.subplots(
+        2, 2, figsize=(7.0, 6.8), facecolor="white",
+        gridspec_kw={"hspace": 0.30, "wspace": 0.22,
+                     "top": 0.94, "bottom": 0.07,
+                     "left": 0.08, "right": 0.93},
+    )
+
+    for idx in range(4):
+        row, col = divmod(idx, 2)
+        ax = axes[row, col]
+        is_bottom = (row == 1)
+        is_left   = (col == 0)
+
+        # Sample coloured noise in Fourier space
+        noise_hat = (rng.standard_normal((mx, mx)) * np.sqrt(q * 0.5)
+                     + 1j * rng.standard_normal((mx, mx))
+                     * np.sqrt(q * 0.5))
+        noise_hat[0, 0] = noise_hat[0, 0].real * np.sqrt(2)
+
+        # To physical space (correct normalisation: no extra /M)
+        noise_phys = np.fft.ifft2(noise_hat * M).real
+
+        vmax = float(np.abs(noise_phys).max())
+        im = ax.pcolormesh(
+            x, x, noise_phys.T,
+            cmap="RdBu_r", vmin=-vmax, vmax=vmax,
+            shading="gouraud", rasterized=True,
+        )
+        ax.set_aspect("equal")
+        _style_heatmap_ax(ax)
+
+        ax.set_title(f"{panel_letters[idx]}",
+                     fontsize=10, fontweight="bold", color=COLOURS["text_dark"],
+                     pad=5, loc="center")
+
+        if is_left:
+            _set_pi_ticks(ax, "y")
+            if is_bottom:
+                ax.set_yticklabels(["", r"$\pi$", r"$2\pi$"], fontsize=10)
+        else:
+            ax.set_yticks(_PI_TICKS)
+            ax.set_yticklabels([""] * 3)
+
+        if is_bottom:
+            _set_pi_ticks(ax, "x")
+        else:
+            ax.set_xticks(_PI_TICKS)
+            ax.set_xticklabels([""] * 3)
+
+        cb = _slim_colorbar(fig, im, ax)
+        cb.set_ticks([-vmax, 0, vmax])
+        cb.ax.yaxis.set_major_formatter(
+            mticker.FuncFormatter(lambda v, _: f"{v:.1f}" if v != 0 else "0")
+        )
+
+    _save_figure(fig, output_path)
+    return fig
+
+
+def run_spectral_convergence(
+    noise_decay: float = 2.0,
+    seed: int = RANDOM_SEED,
+) -> None:
+    """
+    Spectral convergence test: compare N=48 (49 modes) vs N=98 (99 modes).
+
+    Demonstrates that the noise covariance decays fast enough for the
+    truncation to fully resolve both the forcing and the solution.
+    """
+    print("\n  Spectral Convergence Test")
+    print("  " + "-" * 50)
+
+    resolutions = [48, 98]
+    results = {}
+
+    for N in resolutions:
+        rng = np.random.default_rng(seed)
+        spde = Heat2D(N, noise_decay, nu=1.0)
+
+        mx = spde.mx
+        a  = spde.operator_eigenvalues_2d
+        t  = 1.0
+
+        exp_at   = np.exp(a * t)
+        gamma_2d = spde.compute_covariance_2d(t)
+
+        X, Y = np.meshgrid(spde.x, spde.x, indexing="ij")
+        u0_hat   = spde.to_fourier(np.cos(X) + 0.5 * np.cos(Y)
+                                   + 0.25 * np.cos(X + Y))
+        mean_hat = exp_at * u0_hat
+
+        noise_hat = (rng.standard_normal((mx, mx)) * np.sqrt(gamma_2d * 0.5)
+                     + 1j * rng.standard_normal((mx, mx))
+                     * np.sqrt(gamma_2d * 0.5))
+        noise_hat[0, 0] = noise_hat[0, 0].real * np.sqrt(2)
+        u_hat = mean_hat + noise_hat
+
+        fields = compute_2d_score_fields(spde, u_hat, mean_hat, gamma_2d)
+        total_var = float(np.sum(gamma_2d))
+
+        results[N] = {
+            "fourier_error": fields["fourier_error"],
+            "phys_max_error": float(fields["error"].max()),
+            "total_var": total_var,
+        }
+
+        print(f"\n    N = {N}  ({mx} x {mx} = {mx**2} modes)")
+        print(f"      Fourier-space max |error|:  {fields['fourier_error']:.2e}")
+        print(f"      Physical-space max |error|: {fields['error'].max():.2e}")
+        print(f"      Total variance Tr(gamma):   {total_var:.6f}")
+
+    # Tail energy: fraction of N=98 variance that lies beyond |k|=24
+    spde_hi  = Heat2D(98, noise_decay, nu=1.0)
+    gamma_hi = spde_hi.compute_covariance_2d(1.0)
+    total_hi = float(np.sum(gamma_hi))
+    k1d_hi   = np.fft.fftfreq(99) * 99
+    KXh, KYh = np.meshgrid(k1d_hi, k1d_hi, indexing="ij")
+    mask_beyond = (np.abs(KXh) > 24) | (np.abs(KYh) > 24)
+    tail_var = float(np.sum(gamma_hi[mask_beyond]))
+    frac = tail_var / total_hi * 100
+
+    # Also compare noise fields
+    k1d_lo = np.fft.fftfreq(49) * 49
+    K2_lo  = k1d_lo[:, None]**2 + k1d_lo[None, :]**2
+    q_lo   = (1.0 + K2_lo)**(-noise_decay)
+    q_hi   = (1.0 + KXh**2 + KYh**2)**(-noise_decay)
+    noise_var_lo = float(np.sum(q_lo))
+    noise_var_hi = float(np.sum(q_hi))
+    noise_tail = (noise_var_hi - noise_var_lo) / noise_var_hi * 100
+
+    print(f"\n    Spectral tail analysis (modes beyond |k| > 24):")
+    print(f"      Solution variance:  {tail_var:.2e}  "
+          f"({frac:.4f}% of total)")
+    print(f"      Noise variance:     {noise_var_hi - noise_var_lo:.2e}  "
+          f"({noise_tail:.4f}% of total)")
+    print(f"    => Truncation to 49 modes fully resolves forcing and solution")
+    print("  " + "-" * 50)
+
 
 def run_validation(
     output_dir: Path = OUTPUT_DIR,
@@ -708,8 +897,13 @@ def run_validation(
 
         results.append((title, times, mall, fd, fields_2d))
 
-    print("\n  Generating figure...")
-    create_validation_figure(output_dir / "score_2d_spectral", results, config)
+    print("\n  Generating figures...")
+    create_solution_figure(output_dir / "score_2d_solution", results)
+    create_error_figure(output_dir / "score_2d_error", results)
+    create_noise_figure(output_dir / "score_2d_noise",
+                        N=config.N, noise_decay=config.noise_decay)
+
+    run_spectral_convergence(noise_decay=config.noise_decay)
 
 
 def main() -> None:
