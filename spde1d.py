@@ -16,7 +16,7 @@ against finite-difference baselines for four SPDE classes:
     - Fractional Laplacian:         A = -(-Δ)^α
 
 Usage:
-    python numerical_experiments.py
+    python spde1d.py
 """
 
 from __future__ import annotations
