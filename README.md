@@ -134,7 +134,15 @@ Also runs the 2D spectral convergence test.
 
 **1D** — All four SPDEs achieve errors in the range $10^{-11}$ to $10^{-7}$, consistent with the $\mathcal{O}(\varepsilon^2)$ truncation error of the central finite-difference scheme.
 
+![1D Score Validation](figures/score_validation.png)
+
 **2D** — Pointwise errors at machine precision: $\mathcal{O}(10^{-10})$ for second-order operators, $\mathcal{O}(10^{-9})$ for fourth-order operators (where larger eigenvalues amplify floating-point rounding).
+
+![2D Solution Fields](figures/score_2d_solution.png)
+
+![2D Score Error](figures/score_2d_error.png)
+
+![2D Coloured Noise](figures/score_2d_noise.png)
 
 ## Citation
 
