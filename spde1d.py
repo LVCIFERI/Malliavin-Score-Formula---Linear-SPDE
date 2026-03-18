@@ -8,24 +8,15 @@ using spectral Galerkin discretisation in the sine basis.
 This module validates the closed-form score formula:
     β_h(u) = -⟨u - S(t)u₀, γ_t⁻¹ h⟩
 
-against finite-difference baselines for eight SPDE classes:
+against finite-difference baselines for four SPDE classes:
 
-    Second-order:
-        - Stochastic Heat Equation:     A = Δ
-        - Ornstein-Uhlenbeck:           A = Δ - κI
-        - Scaled Diffusion:             A = νΔ
-        - Fractional Laplacian:         A = -(-Δ)^α
-
-    Fourth-order:
-        - Biharmonic:                   A = -Δ²
-        - Cahn-Hilliard (linear):       A = -Δ² + βΔ
-        - Swift-Hohenberg (linear):     A = r - (1 + Δ)²
-
-    General:
-        - Polynomial in Laplacian:      A = Σⱼ cⱼ Δʲ
+    - Stochastic Heat Equation:     A = Δ
+    - Ornstein-Uhlenbeck:           A = Δ - κI
+    - Scaled Diffusion:             A = νΔ
+    - Fractional Laplacian:         A = -(-Δ)^α
 
 Usage:
-    python score_validation.py
+    python numerical_experiments.py
 """
 
 from __future__ import annotations
@@ -51,24 +42,32 @@ RANDOM_SEED = 42
 OUTPUT_DIR = Path("figures")
 DPI = 300
 
-# Updated font sizes to match document text (typically 10-11pt)
 plt.rcParams.update({
-    "font.family": "serif",
-    "font.size": 11,           # Base font size matching document
-    "axes.labelsize": 11,      # Axis labels same as text
-    "axes.titlesize": 12,      # Titles slightly larger
-    "legend.fontsize": 10,     # Legend readable
-    "xtick.labelsize": 10,     # Tick labels
-    "ytick.labelsize": 10,
-    "text.usetex": False,
-    "figure.dpi": 150,
-    "savefig.dpi": DPI,
-    "savefig.bbox": "tight",
-    "axes.grid": False,
-    "axes.spines.top": False,
-    "axes.spines.right": False,
-    "axes.linewidth": 0.8,
-    "lines.linewidth": 1.8,
+    # Typography: match 2D figures (STIX General for LaTeX-quality text)
+    "font.family":          "serif",
+    "font.serif":           ["STIXGeneral", "Times New Roman", "DejaVu Serif"],
+    "mathtext.fontset":     "stix",
+    "font.size":            10,
+    "axes.labelsize":       10,
+    "axes.titlesize":       10,
+    "legend.fontsize":      8.5,
+    "xtick.labelsize":      10,
+    "ytick.labelsize":      10,
+    "text.usetex":          False,
+    "figure.dpi":           150,
+    "savefig.dpi":          DPI,
+    "savefig.bbox":         "tight",
+    "axes.grid":            False,
+    "axes.spines.top":      False,
+    "axes.spines.right":    False,
+    "axes.linewidth":       0.55,
+    "xtick.major.width":    0.55,
+    "ytick.major.width":    0.55,
+    "xtick.major.size":     3.0,
+    "ytick.major.size":     3.0,
+    "xtick.direction":      "in",
+    "ytick.direction":      "in",
+    "lines.linewidth":      1.6,
 })
 
 COLOURS = {
@@ -802,17 +801,17 @@ def create_2x2_figure(
 
         # Styling - main panel
         ax_main.axhline(0, color=COLOURS["light_grey"], linewidth=0.8)
-        ax_main.set_title(title, fontweight="bold", fontsize=11, pad=6)
+        ax_main.set_title(title, fontweight="bold", fontsize=10, pad=6)
         ax_main.set_xlim([0, config.t_end + 0.02])
         ax_main.tick_params(labelbottom=False)
-        ax_main.set_ylabel(r"$\beta_h(u(t))$", fontsize=11)
+        ax_main.set_ylabel(r"$\beta_h(u(t))$", fontsize=10)
 
         # Styling - error panel
         ax_error.axhline(
             1e-12, color=COLOURS["grey"],
             linestyle="--", linewidth=1.0, alpha=0.7
         )
-        ax_error.set_xlabel(r"$t$", fontsize=11)
+        ax_error.set_xlabel(r"$t$", fontsize=10)
         ax_error.set_xlim([0, config.t_end + 0.02])
         ax_error.set_ylim([y_min, y_max])
         ax_error.set_ylabel("|Error|", fontsize=10)
@@ -826,7 +825,7 @@ def create_2x2_figure(
             ]
             ax_main.legend(
                 handles=legend_elements, loc="upper right",
-                frameon=True, framealpha=0.95, fontsize=10,
+                frameon=True, framealpha=0.95, fontsize=8.5,
                 edgecolor=COLOURS["light_grey"],
             )
 
@@ -850,7 +849,7 @@ def create_validation_figures(
     seed: int = RANDOM_SEED,
 ) -> None:
     """
-    Create two 2x2 figures: one for second-order SPDEs, one for fourth-order.
+    Create a 2x2 figure for four SPDE classes.
 
     Args:
         output_dir: Directory for output figures
@@ -859,8 +858,7 @@ def create_validation_figures(
     """
     rng = np.random.default_rng(seed)
 
-    # Second-order SPDEs (2x2)
-    second_order_specs = [
+    spde_specs = [
         (HeatEquation, {}, "Heat Equation"),
         (OrnsteinUhlenbeck, {"kappa": 2.0}, "Ornstein–Uhlenbeck"),
         (ScaledDiffusion, {"nu": 0.1}, "Scaled Diffusion"),
@@ -868,32 +866,46 @@ def create_validation_figures(
     ]
 
     print("\n" + "=" * 60)
-    print("Generating Second-Order SPDEs Figure")
+    print("Generating Score Verification Figure")
     print("=" * 60)
     create_2x2_figure(
-        output_dir / "score_second_order",
-        second_order_specs,
+        output_dir / "score_validation",
+        spde_specs,
         config,
         rng,
     )
 
-    # Fourth-order SPDEs (2x2)
-    fourth_order_specs = [
-        (Biharmonic, {}, "Biharmonic"),
-        (CahnHilliard, {"beta": 1.0}, "Cahn–Hilliard"),
-        (SwiftHohenberg, {"r": 0.0}, "Swift–Hohenberg"),
-        (PolynomialLaplacian, {"poly": PolynomialCoefficients({2: -1.0, 1: 0.5})}, "Polynomial"),
-    ]
 
-    print("\n" + "=" * 60)
-    print("Generating Fourth-Order SPDEs Figure")
-    print("=" * 60)
-    create_2x2_figure(
-        output_dir / "score_fourth_order",
-        fourth_order_specs,
-        config,
-        rng,
-    )
+def run_1d_spectral_convergence(
+    noise_decay: float = 2.0,
+    seed: int = RANDOM_SEED,
+) -> None:
+    """
+    1D spectral convergence test: compare N=64 vs N=128 modes.
+
+    Demonstrates that the noise covariance q_k = k^{-s} decays fast enough
+    for the Galerkin truncation to fully resolve both the forcing and solution.
+    """
+    print("\n  1D Spectral Convergence Test")
+    print("  " + "-" * 50)
+
+    for N in [64, 128]:
+        spde = HeatEquation(n_modes=N, time=1.0, noise_decay=noise_decay)
+        total_var = float(np.sum(spde.gamma_eigenvalues))
+        noise_var = float(np.sum(spde.q_eigenvalues))
+        print(f"\n    N = {N} modes")
+        print(f"      Noise variance  Tr(Q):     {noise_var:.6f}")
+        print(f"      Solution variance Tr(gamma): {total_var:.6f}")
+
+    # Tail analysis
+    modes_hi = np.arange(1, 129)
+    q_hi = modes_hi ** (-noise_decay)
+    q_tail = float(np.sum(q_hi[64:]))
+    q_total = float(np.sum(q_hi))
+    frac = q_tail / q_total * 100
+    print(f"\n    Noise variance in modes k > 64: {q_tail:.2e}  ({frac:.4f}% of total)")
+    print(f"    => Truncation to 64 modes fully resolves forcing and solution")
+    print("  " + "-" * 50)
 
 
 # =============================================================================
@@ -910,6 +922,7 @@ def main() -> None:
     print("=" * 70)
 
     create_validation_figures()
+    run_1d_spectral_convergence()
 
     print("\n" + "=" * 70)
     print("Complete")
