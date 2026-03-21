@@ -577,10 +577,22 @@ def create_solution_figure(
         is_bottom = (row == 1)
         is_left   = (col == 0)
 
-        vmax = float(np.abs(cf).max()) or 1.0
+        # Asymmetric colour limits for panels whose data is one-signed
+        # (e.g. Stochastic Biharmonic); symmetric otherwise.
+        cf_min, cf_max = float(cf.min()), float(cf.max())
+        if cf_max <= 0:
+            # All-negative data → anchor at zero (white = 0 in RdBu_r)
+            vmin_plot, vmax_plot = cf_min, 0.0
+        elif cf_min >= 0:
+            # All-positive data → anchor at zero
+            vmin_plot, vmax_plot = 0.0, cf_max
+        else:
+            vabs = max(abs(cf_min), abs(cf_max)) or 1.0
+            vmin_plot, vmax_plot = -vabs, vabs
+
         im = ax.pcolormesh(
             x, y, cf.T,
-            cmap="RdBu_r", vmin=-vmax, vmax=vmax,
+            cmap="RdBu_r", vmin=vmin_plot, vmax=vmax_plot,
             shading="gouraud", rasterized=True,
         )
         ax.set_aspect("equal")
@@ -605,7 +617,10 @@ def create_solution_figure(
             ax.set_xticklabels([""] * 3)
 
         cb = _slim_colorbar(fig, im, ax)
-        cb.set_ticks([-vmax, 0, vmax])
+        # Place ticks at endpoints and at zero (if zero is within range)
+        ticks = sorted({vmin_plot, vmax_plot}
+                       | ({0} if vmin_plot <= 0 <= vmax_plot else set()))
+        cb.set_ticks(ticks)
         cb.ax.yaxis.set_major_formatter(
             mticker.FuncFormatter(lambda v, _: f"{v:.1e}" if v != 0 else "0")
         )
